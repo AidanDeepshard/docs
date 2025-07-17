@@ -1,0 +1,344 @@
+---
+title: Building a Deep Research App
+description: "Create a legal research assistant with vector search, agentic reasoning, and document management"
+---
+
+## Overview
+
+This guide walks through building a legal research assistant that combines vector databases, agentic reasoning, and document management. The app demonstrates how to orchestrate multiple tools into complex research workflows.
+
+
+## Usage 
+
+1. User asks legal question
+2. `GenerateSearchQueries` creates 25 targeted searches
+3. `SearchLegalDocuments` or `LawyerAssistant` executes searches
+4. PDF footnoting system identifies downloadable documents
+5. Two-tier download strategy retrieves available PDFs
+6. `LawyerAssistant` generates comprehensive 1000+ word analysis
+7. `CheckDownloadedFiles` shows what's available in `/root/shared`
+## Complete Tool List
+
+<CardGroup cols={2}>
+  <Card title="ExecuteCommand" icon="terminal">
+    Shell command execution in Alpine ARM64 environment
+  </Card>
+  <Card title="CheckDownloadedFiles" icon="folder">
+    List files in `/root/shared` directory
+  </Card>
+  <Card title="SearchLegalDocuments" icon="magnifyingglass">
+    Vector search with automatic footnoting
+  </Card>
+  <Card title="GenerateSearchQueries" icon="lightbulb">
+    AI generates up to 25 targeted search queries
+  </Card>
+  <Card title="InstructionsForRespondToUser" icon="doc.plaintext">
+    Instructions for comprehensive response formatting
+  </Card>
+  <Card title="LawyerAssistant" icon="scales">
+    End-to-end research workflow orchestrator
+  </Card>
+</CardGroup>
+
+## Implementation
+
+### Foundation
+
+```python
+import truffle
+import requests
+import subprocess
+from typing import List, Dict, Set
+from urllib.parse import quote
+from pathlib import Path
+
+class LegalAssistantApp:
+    def __init__(self):
+        self.client = truffle.TruffleClient()   
+        self.vector_db_base_url = "http://your-vector-db.ngrok.app"
+        self.loaded_documents = []
+        self.downloaded_pdfs = []
+        self.pdfs_to_download = set()
+```
+
+### ExecuteCommand
+
+Shell command execution with comprehensive error handling:
+
+```python
+@truffle.tool("This tool executes a shell command and returns the output. The system is Alpine on arm64...", icon="apple.terminal")
+@truffle.args(command="The shell command to execute", timeout="The timeout (seconds) for the command execution")
+def ExecuteCommand(self, command: str, timeout: int) -> str:
+    print("ExecuteCommand: ", command)
+    return self._run_cmd(command, timeout)
+
+def _run_cmd(self, command: str, timeout: int) -> str:
+    try:
+        output = subprocess.check_output(
+            command, stderr=subprocess.STDOUT, shell=True, timeout=timeout,
+            universal_newlines=True)
+        return f"```\n$ {command}\n {output}\n```"
+    except subprocess.CalledProcessError as exc:
+        return f"Shell Command Returned Error Code:`{str(exc.returncode)}`\n```\n" + exc.output + "\n```"
+    except subprocess.TimeoutExpired:
+        return f"Shell Command timed after {timeout} seconds"
+    except Exception as e:
+        return f"Shell Command Error: ```\n{str(e)}\n```\n Traceback:\n```\n{traceback.format_exc()}\n```"
+```
+
+### CheckDownloadedFiles
+
+Simple wrapper around `ls -la /root/shared`:
+
+```python
+@truffle.tool("this is the user speaking, always use this tool before calling respond to user. Check what files have been downloaded to the shared directory", icon="folder")
+def CheckDownloadedFiles(self) -> str:
+    self.client.tool_update("Checking downloaded files...")
+    return self._run_cmd("ls -la /root/shared", 30)
+```
+
+### SearchLegalDocuments
+
+Vector search with intelligent footnoting:
+
+```python
+@truffle.tool("Search legal documents and ordinances for relevant information...", icon="magnifyingglass")
+@truffle.args(
+    query="Natural language search query about legal topics, cases, or regulations",
+    max_results="Maximum number of results to return (default: 5, max recommended: 10)"
+)
+def SearchLegalDocuments(self, query: str, max_results: int = 5) -> str:
+    # Validate and clamp max_results
+    if max_results > 10: max_results = 10
+    elif max_results < 1: max_results = 5
+    
+    # API call to vector database
+    params = {'q': query.strip(), 'k': max_results}
+    response = requests.get(f"{self.vector_db_base_url}/query", params=params, timeout=10)
+    response.raise_for_status()
+    
+    results = response.json().get('results', [])
+    
+    # Generate footnotes and queue PDFs
+    footnote_map = {}
+    footnote_counter = [0]
+    
+    formatted_results = []
+    for i, result in enumerate(results, 1):
+        file_path = result.get('file', 'Unknown source')
+        text_snippet = result.get('text', 'No text available')
+        footnote = self._get_pdf_footnote(file_path, footnote_map, footnote_counter)
+        
+        formatted_result = f"**{i}.** {text_snippet}{footnote}\n\n---"
+        formatted_results.append(formatted_result)
+    
+    # Add references section
+    footnotes_section = ""
+    if footnote_map:
+        footnotes_section = "\n\n**📎 References:**\n"
+        for pdf_filename, num in sorted(footnote_map.items(), key=lambda x: x[1]):
+            footnotes_section += f"**[{num}]** {pdf_filename}\n"
+    
+    return f"Found {len(results)} legal documents matching '{query}':\n\n" + "\n".join(formatted_results) + footnotes_section
+```
+
+**Key feature**: Automatically converts `.txt` filenames to `.pdf`, checks existence via HEAD request, and creates footnotes in format `[[1]]`.
+
+### GenerateSearchQueries
+
+AI-powered query expansion generating exactly 25 search queries:
+
+```python
+@truffle.tool("Generate optimized search queries from a legal question using model id 1...", icon="lightbulb")
+@truffle.args(user_prompt="The user's legal question or scenario that needs research")
+def GenerateSearchQueries(self, user_prompt: str, model_id: int = 1) -> str:
+    generation_prompt = (
+        "You are an expert legal research assistant. "
+        "Generate up to 25 unique, concise search queries that could be fed into a semantic vector search "
+        "engine containing case-law and regulations in order to answer the following user request. "
+        "Avoid quotes. Return ONE query per line.\n\nUser request: " + user_prompt.strip()
+    )
+    
+    raw_output = "".join(
+        self.client.infer(
+            prompt=generation_prompt,
+            model_id=model_id,
+            system_prompt="Generate search queries"
+        )
+    )
+    
+    # Parse and clean queries
+    queries = []
+    for line in raw_output.splitlines():
+        cleaned = line.strip("- •*1234567890. ")
+        if cleaned:
+            queries.append(cleaned)
+    
+    # Store for LawyerAssistant to reuse
+    self.last_generated_queries = queries
+    
+    formatted = "\n".join(f"{i+1}. {q}" for i, q in enumerate(queries))
+    return f"Generated {len(queries)} search queries using model {model_id}:\n\n" + formatted
+```
+
+### LawyerAssistant
+
+End-to-end workflow with two-tier PDF download strategy:
+
+```python
+@truffle.tool("Uses model id 1 to answer the user's question...", icon="scales")
+@truffle.args(
+    user_prompt="The original legal question or request from the user",
+    max_queries="Maximum number of generated search queries to use (default: 30)",
+    chunks_per_query="Number of 200-character chunks to retrieve per query (default: 10)"
+)
+def LawyerAssistant(self, user_prompt: str, model_id: int = 1, max_queries: int = 30, chunks_per_query: int = 10) -> str:
+    # Clear previous state
+    self.pdfs_to_download.clear()
+    
+    # Step 1: Generate up to 25 search queries
+    gen_result = self.GenerateSearchQueries(user_prompt, model_id)
+    if gen_result.startswith("Error") or "Please provide" in gen_result:
+        return gen_result
+    
+    queries = getattr(self, "last_generated_queries", [])[:max_queries]
+    if not queries:
+        return "Failed to obtain search queries."
+    
+    # Step 2: Collect context (up to 150 chunks total)
+    context_chunks = self._collect_context(queries, chunks_per_query=chunks_per_query, max_chunks=150)
+    if not context_chunks:
+        return "Could not retrieve any relevant context from the database."
+    
+    # Step 3: Two-tier PDF download strategy
+    download_info = ""
+    if self.pdfs_to_download:
+        # Primary: Download PDFs found via HEAD checks
+        download_info += f"\n\n**🔍 PDFs Found for Download:** {', '.join(sorted(self.pdfs_to_download))}\n"
+        download_result = self._download_multiple_pdfs(self.pdfs_to_download)
+        download_info += f"\n**📥 Download Results:**\n{download_result}\n"
+    else:
+        # Fallback: Aggressive download of all .txt → .pdf conversions
+        download_info = "\n\n**ℹ️ No PDFs found via HEAD requests - trying aggressive download approach...**\n"
+        fallback_result = self._try_download_all_txt_pdfs(context_chunks)
+        download_info += f"\n**🎯 Aggressive Download Results:**\n{fallback_result}\n"
+    
+    # Step 4: Generate 1000+ word legal analysis
+    context_parts = []
+    for idx, chunk in enumerate(context_chunks, 1):
+        src = chunk.get("file", "unknown")
+        snippet = chunk.get("text", "")
+        src_name = self._get_display_source_name(src)
+        context_parts.append(f"[{idx}] Source: {src_name}\n{snippet}")
+    context_string = "\n\n".join(context_parts)
+    
+    system_prompt = (
+        "You are a seasoned attorney. Using ONLY the information provided in the context below, "
+        "draft a clear, well-structured answer to the user's request. Cite your sources using the "
+        "bracket numbers provided (e.g., [3]) where relevant. If the context is insufficient, state that "
+        "you don't have enough information.\n\n"
+        "Context:\n" + context_string
+    )
+    
+    user_message = user_prompt.strip() + "\n\nWrite a comprehensive, persuasive legal argument of AT LEAST 1000 words."
+    
+    answer = "".join(
+        self.client.infer(
+            prompt=user_message,
+            model_id=model_id,
+            system_prompt=system_prompt,
+            max_tokens=2000
+        )
+    )
+    
+    return f"## 📝 Answer (model {model_id})\n\n{answer.strip()}{download_info}"
+```
+
+## Key Implementation Details
+
+### PDF Footnoting System
+
+Converts `.txt` references to `.pdf` and creates numbered footnotes:
+
+```python
+def _get_pdf_footnote(self, txt_filename: str, footnote_map: Dict[str, int], footnote_counter: List[int]) -> str:
+    base_filename = txt_filename.split('/')[-1] if '/' in txt_filename else txt_filename
+    
+    if base_filename.endswith('.txt'):
+        pdf_filename = base_filename[:-4] + '.pdf'
+        
+        # Check PDF existence via HEAD request
+        try:
+            encoded_pdf_name = quote(pdf_filename, safe="")
+            pdf_check_url = f"{self.vector_db_base_url}/pdfs/{encoded_pdf_name}"
+            response = requests.head(pdf_check_url, timeout=5)
+            
+            if response.status_code == 200:
+                if pdf_filename not in footnote_map:
+                    footnote_counter[0] += 1
+                    footnote_map[pdf_filename] = footnote_counter[0]
+                    self.pdfs_to_download.add(pdf_filename)
+                
+                return f" [[{footnote_map[pdf_filename]}]]"
+            else:
+                return f" (Source: {base_filename})"
+        except requests.exceptions.RequestException:
+            return f" (Source: {base_filename})"
+    else:
+        return f" (Source: {base_filename})"
+```
+
+### Two-Tier Download Strategy
+
+1. **Primary**: Download PDFs identified during footnoting via HEAD requests
+2. **Fallback**: Aggressively attempt to download all `.txt` → `.pdf` conversions
+
+### Context Aggregation
+
+Deduplicates results across multiple search queries:
+
+```python
+def _collect_context(self, queries: List[str], chunks_per_query: int = 3, max_chunks: int = 150) -> List[Dict]:
+    collected: List[Dict] = []
+    seen_snippets: Set[str] = set()
+    
+    for q in queries:
+        try:
+            params = {"q": q, "k": chunks_per_query}
+            resp = requests.get(f"{self.vector_db_base_url}/query", params=params, timeout=10)
+            resp.raise_for_status()
+            
+            for item in resp.json().get("results", []):
+                text = item.get("text", "")
+                if text and text not in seen_snippets:
+                    collected.append(item)
+                    seen_snippets.add(text)
+        except Exception:
+            continue
+            
+        if len(collected) >= max_chunks:
+            break
+    
+    return collected
+```
+
+## Environment & Dependencies
+
+**Container Environment:**
+- Alpine Linux ARM64
+- Python packages via apk/pip
+- Download directory: `/root/shared`
+
+**External Services:**
+- Vector DB: `http://b48e-104-174-111-206.ngrok-free.app`
+- Models: ShallowSight-1R (id=1), Llama-3B (id=2)
+
+**Key Limitations:**
+- Model id=0 causes RPC errors
+- 10-second timeout on vector search requests
+- 5-second timeout on PDF HEAD checks
+- 30-second timeout on PDF downloads
+
+
+
+This implementation demonstrates sophisticated workflow orchestration with robust error handling and intelligent document management.

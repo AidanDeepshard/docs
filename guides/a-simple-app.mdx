@@ -1,0 +1,111 @@
+---
+title: Build Your First App
+description: "Create and deploy a simple WeatherChecker using the Truffle SDK"
+---
+
+## Build Your First App: WeatherChecker
+
+In this tutorial, you'll build a `WeatherChecker` app that fetches current weather for any city using the wttr.in API.
+
+<Info>
+Prerequisites:
+- Python 3.10+
+- Virtual environment activated
+- Truffle SDK installed
+</Info>
+
+### 1. Initialize
+
+Open your terminal and run:
+
+```bash
+truffle init
+```
+
+You'll be prompted for a project name and description. This creates:
+
+- `app.py` — your main Python file  
+- `manifest.json` — app metadata  
+- `requirements.txt` — dependency list  
+
+---
+
+### 2. Write Your App
+
+Replace the contents of `app.py` with:
+
+```python
+import truffle
+import requests
+
+class WeatherChecker:
+    def __init__(self):
+        self.client = truffle.TruffleClient()
+
+    @truffle.tool(
+        description="Get current weather for a specified city",
+        icon="cloud.sun"
+    )
+    @truffle.args(
+        city="Name of the city to fetch weather for"
+    )
+    def get_weather(self, city: str) -> str:
+        """Fetches weather data from wttr.in and returns a text summary."""
+        try:
+            self.client.tool_update(f"Fetching weather for {city}...")
+            response = requests.get(f"http://wttr.in/{city}?format=3")
+            return response.text
+        except Exception as e:
+            self.client.tool_update(f"Error: {e}")
+            raise ValueError(f"Failed to fetch weather for {city}: {e}")
+
+if __name__ == "__main__":
+    truffle.run(WeatherChecker())
+```
+
+---
+
+### 3. Install Dependencies
+
+Ensure your `requirements.txt` lists:
+
+```text
+truffle-sdk>=0.1.0
+requests>=2.28
+```
+
+Then install:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+### 4. Build & Upload
+
+Bundle and deploy your app:
+
+```bash
+truffle build
+truffle upload
+```
+
+- `truffle build` – creates a `.truffle` package  
+- `truffle upload` – deploys to cloud or connected Truffle-1  
+
+---
+
+### 5. Test Your App
+
+Launch the Truffle Client, select **WeatherChecker**, and ask:
+
+> What's the weather in New York?
+
+The agent will call your `get_weather("New York")` tool and reply, for example:
+
+> New York: 🌤 +25°C
+
+<Tip>
+You can extend this app with additional tools (e.g. forecasts, alerts) or customize icons and descriptions.
+</Tip>

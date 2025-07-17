@@ -1,0 +1,107 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Truffle",
+  "colors": {
+    "primary": "#000000",
+    "light": "#D7D7D7",
+    "dark": "#ffffff"
+  },
+  "favicon": "/favicon.ico",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Building apps",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "getting-started/what-are-apps",
+              "getting-started/setup"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/a-simple-app",
+              "guides/conditionals-and-predicates",
+              "guides/managing-context",
+              "guides/async-tools",
+              "guides/networking",
+              "guides/system-tools",
+              "guides/building-a-deep-research-app"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Using the client",
+        "groups": [
+          {
+            "group": "Getting started",
+            "pages": [
+              "client/installation"
+            ]
+          },
+          {
+            "group": "Using the client",
+            "pages": [
+              "client/navigation",
+              "client/general-usage",
+              "client/usage-with-SDK"
+            ]
+          }
+        ]
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "Homepage",
+          "href": "https://www.itsalltruffles.com",
+          "icon": "house",
+          "color": {
+            "light": "#000000",
+            "dark": "#ffffff"
+          }
+        },
+        {
+          "anchor": "Support",
+          "href": "https://discord.gg/itsalltruffles",
+          "icon": "discord",
+          "color": {
+            "light": "#000000",
+            "dark": "#ffffff"
+          }
+        },
+        {
+          "anchor": "X",
+          "href": "https://x.com/itsalltruffles",
+          "icon": "x",
+          "color": {
+            "light": "#000000",
+            "dark": "#ffffff"
+          }
+        }
+      ]
+    }
+  },
+  "logo": {
+    "light": "/images/truffle.png",
+    "dark": "/images/truffle.png"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Support",
+        "href": "https://discord.gg/itsalltruffles"
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "x": "https://x.com/itsalltruffles",
+      "github": "https://github.com/deepshard"
+    }
+  }
+}
